@@ -1,0 +1,2 @@
+(defpackage :mooncrash
+  (:use :cl))
