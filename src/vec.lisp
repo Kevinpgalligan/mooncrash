@@ -3,8 +3,8 @@
 (defun make-vec2 (x y)
   (list x y))
 
-(defun vx (v) (car v))
-(defun vy (v) (cadr v))
+(defun vec2-x (v) (car v))
+(defun vec2-y (v) (cadr v))
 
 (defun v+ (&rest vs)
   (apply #'vec2-piecewise-op (cons '+ vs)))
