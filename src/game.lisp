@@ -13,11 +13,16 @@
 (defparameter *dt* 1e-9
   "seconds per timestep")
 
+(defparameter *launch-multiplier* 100000000)
+
 ;; Relationship between pixels & distance.
 (defparameter *pixels-per-m* (/ 75 *earth-radius*))
 
 (defun distance-to-pixels (d)
   (ceiling (* d *pixels-per-m*)))
+
+(defun pixels-to-distance (p)
+  (/ p *pixels-per-m*))
 
 ;; Screen constants.
 (defparameter *width* (* 10 *earth-radius*))
@@ -63,21 +68,14 @@
 		 :colour c
 		 :mass mass))
 
-(defun make-moon ()
-  (make-ball (+ (* 3 *earth-radius*) (/ *width* 2))
-	     (+ (* 3 *earth-radius*) (/ *height* 2))
-	     *moon-radius*
-	     *white*
-	     *moon-mass*
-	     :vx 10000
-	     :vy 3000))
+(defun balls-intersect (b1 b2)
+  (< (dist (pos b1) (pos b2)) (+ (radius b1) (radius b2))))
+
+(defun make-moon (position)
+  (make-ball (vec2-x position) (vec2-y position) *moon-radius* *white* *moon-mass*))
 
 (defun make-earth ()
-  (make-ball (/ *width* 2)
-	     (/ *height* 2)
-	     *earth-radius*
-	     *blue*
-	     *earth-mass*))
+  (make-ball (/ *width* 2) (/ *height* 2) *earth-radius* *blue* *earth-mass*))
 
 (defmethod draw ((ball ball))
   (with-accessors ((pos pos)
@@ -101,11 +99,17 @@
 	(v-scale (/ (* *G* m1 m2) (* r r))
 		 (direction-from pos1 pos2))))))
 
-;; Actual entities.
+;; Game state.
 (defvar *earth*)
 (defvar *moon*)
+(defvar *moon-frozen*)
+(defvar *cursor-position* (gamekit:vec2 0 0))
 
-;; Finally, all the stuff to run the game.
+(defun cursor-to-vec2 ()
+  (make-vec2 (pixels-to-distance (gamekit:x *cursor-position*))
+	     (pixels-to-distance (gamekit:y *cursor-position*))))
+
+;; Finally, all the gamekit stuff to run the game.
 (gamekit:defgame spacesim () ()
   (:viewport-title "Mooncrash")
   (:viewport-width *width-pixels*)
@@ -113,28 +117,49 @@
 
 (defmethod gamekit:post-initialize ((app spacesim))
   (setf *earth* (make-earth))
-  (setf *moon* (make-moon)))
+  (setf *moon* nil)
+  (setf *moon-frozen* t)
+  (gamekit:bind-cursor
+   (lambda (x y)
+     (setf (gamekit:x *cursor-position*) x
+	   (gamekit:y *cursor-position*) y)))
+  (gamekit:bind-button
+   :mouse-left :pressed
+   (lambda ()
+     (let ((potential-moon (make-moon (cursor-to-vec2))))
+       (when (not (balls-intersect potential-moon *earth*))
+	 (setf *moon-frozen* t)
+	 (setf *moon* potential-moon)))))
+  (gamekit:bind-button
+   :mouse-left :released
+   (lambda ()
+     (when *moon*
+       (setf *moon-frozen* nil)
+       (setf (velocity *moon*)
+	     (v-scale *launch-multiplier* (v- (pos *moon*) (cursor-to-vec2))))))))
 
 (defmethod gamekit:draw ((app spacesim))
   (gamekit:draw-rect (gamekit:vec2 0 0) *width-pixels* *height-pixels* :fill-paint *black*)
   (draw *earth*)
-  (draw *moon*))
+  (when *moon*
+    (draw *moon*)))
 
 (defmethod gamekit:act ((app spacesim))
-  (let* ((new-pos (v+ (pos *moon*) (v-scale *dt* (velocity *moon*))))
-	 (offset (- (+ (radius *earth*) (radius *moon*)) (dist new-pos (pos *earth*)))))
-    (when (< 0 offset)
-      ;; Collision! Don't let the bodies overlap.
-      (setf new-pos (v+ new-pos (v-scale offset (direction-from (pos *earth*) new-pos))))
-      ;; Also need to neutralise the velocity in the direction of Earth.
-      ;; ...but then gravity causes it to accelerate back towards Earth immediately?
-      ;; I guess that's okay?
-      ;; So, project velocity onto direction vector from Earth to moon.
-      ;; Then reverse it and subtract from the velocity vector.
-      (let ((dir (direction-from new-pos (pos *earth*))))
-	(setf (velocity *moon*) (v- (velocity *moon*)
-				    (v-scale (vdot (velocity *moon*) dir) dir)))))
-    (setf (pos *moon*) new-pos))
-  (setf (velocity *moon*)
-	(v+ (velocity *moon*)
-	    (v-scale *dt* (gravitational-acceleration *moon* *earth*)))))
+  (when (and *moon* (not *moon-frozen*))
+    (let* ((new-pos (v+ (pos *moon*) (v-scale *dt* (velocity *moon*))))
+	   (offset (- (+ (radius *earth*) (radius *moon*)) (dist new-pos (pos *earth*)))))
+      (when (< 0 offset)
+	;; Collision! Don't let the bodies overlap.
+	(setf new-pos (v+ new-pos (v-scale offset (direction-from (pos *earth*) new-pos))))
+	;; Also need to neutralise the velocity in the direction of Earth.
+	;; ...but then gravity causes it to accelerate back towards Earth immediately?
+	;; I guess that's okay?
+	;; So, project velocity onto direction vector from Earth to moon.
+	;; Then reverse it and subtract from the velocity vector.
+	(let ((dir (direction-from new-pos (pos *earth*))))
+	  (setf (velocity *moon*) (v- (velocity *moon*)
+				      (v-scale (vdot (velocity *moon*) dir) dir)))))
+      (setf (pos *moon*) new-pos))
+    (setf (velocity *moon*)
+	  (v+ (velocity *moon*)
+	      (v-scale *dt* (gravitational-acceleration *moon* *earth*))))))
