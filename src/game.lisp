@@ -10,15 +10,8 @@
 
 (defparameter *G* 6.6743e-11)
 
-(defparameter *dt* 1e-19
+(defparameter *dt* 1e-9
   "seconds per timestep")
-
-(defun gravitational-acceleration (pos1 m1 pos2 m2)
-  "Returns gravitational acceleration between two masses, as a vector.
-The direction is from the first mass to the second."
-  (let ((r (dist pos1 pos2)))
-    (v-scale (/ (* *G* m1 m2) (* r r))
-	     (direction-from pos1 pos2))))
 
 ;; Relationship between pixels & distance.
 (defparameter *pixels-per-m* (/ 75 *earth-radius*))
@@ -70,6 +63,22 @@ The direction is from the first mass to the second."
 		 :colour c
 		 :mass mass))
 
+(defun make-moon ()
+  (make-ball (+ (* 3 *earth-radius*) (/ *width* 2))
+	     (+ (* 3 *earth-radius*) (/ *height* 2))
+	     *moon-radius*
+	     *white*
+	     *moon-mass*
+	     :vx 10000
+	     :vy 3000))
+
+(defun make-earth ()
+  (make-ball (/ *width* 2)
+	     (/ *height* 2)
+	     *earth-radius*
+	     *blue*
+	     *earth-mass*))
+
 (defmethod draw ((ball ball))
   (with-accessors ((pos pos)
 		   (radius radius)
@@ -79,6 +88,18 @@ The direction is from the first mass to the second."
 				       (distance-to-pixels (vec2-y pos)))
 			 (distance-to-pixels radius)
 			 :fill-paint colour)))
+
+(defun gravitational-acceleration (ball-from ball-to)
+  "Returns gravitational acceleration between two masses, as a vector."
+  (with-accessors ((pos1 pos)
+		   (m1 mass))
+      ball-from
+    (with-accessors ((pos2 pos)
+		     (m2 mass))
+	ball-to
+      (let ((r (dist pos1 pos2)))
+	(v-scale (/ (* *G* m1 m2) (* r r))
+		 (direction-from pos1 pos2))))))
 
 ;; Actual entities.
 (defvar *earth*)
@@ -91,18 +112,8 @@ The direction is from the first mass to the second."
   (:viewport-height *height-pixels*))
 
 (defmethod gamekit:post-initialize ((app spacesim))
-  (setf *earth* (make-ball (/ *width* 2)
-			   (/ *height* 2)
-			   *earth-radius*
-			   *blue*
-			   *earth-mass*))
-  (setf *moon* (make-ball (+ (* 3 *earth-radius*) (/ *width* 2))
-			  (+ (* 3 *earth-radius*) (/ *height* 2))
-			  *moon-radius*
-			  *white*
-			  *earth-mass*
-			  :vx 10000
-			  :vy 3000)))
+  (setf *earth* (make-earth))
+  (setf *moon* (make-moon)))
 
 (defmethod gamekit:draw ((app spacesim))
   (gamekit:draw-rect (gamekit:vec2 0 0) *width-pixels* *height-pixels* :fill-paint *black*)
@@ -110,10 +121,20 @@ The direction is from the first mass to the second."
   (draw *moon*))
 
 (defmethod gamekit:act ((app spacesim))
-  (format t "position ~a velocity ~a distance ~a~%" (pos *moon*) (velocity *moon*) (v-scale *dt* (velocity *moon*)))
-  (format t "and acceleration: ~a~%" (gravitational-acceleration (pos *moon*) (mass *moon*) (pos *earth*) (mass *earth*)))
-  (setf (pos *moon*)
-	(v+ (pos *moon*) (v-scale *dt* (velocity *moon*))))
+  (let* ((new-pos (v+ (pos *moon*) (v-scale *dt* (velocity *moon*))))
+	 (offset (- (+ (radius *earth*) (radius *moon*)) (dist new-pos (pos *earth*)))))
+    (when (< 0 offset)
+      ;; Collision! Don't let the bodies overlap.
+      (setf new-pos (v+ new-pos (v-scale offset (direction-from (pos *earth*) new-pos))))
+      ;; Also need to neutralise the velocity in the direction of Earth.
+      ;; ...but then gravity causes it to accelerate back towards Earth immediately?
+      ;; I guess that's okay?
+      ;; So, project velocity onto direction vector from Earth to moon.
+      ;; Then reverse it and subtract from the velocity vector.
+      (let ((dir (direction-from new-pos (pos *earth*))))
+	(setf (velocity *moon*) (v- (velocity *moon*)
+				    (v-scale (vdot (velocity *moon*) dir) dir)))))
+    (setf (pos *moon*) new-pos))
   (setf (velocity *moon*)
 	(v+ (velocity *moon*)
-	    (v-scale *dt* (gravitational-acceleration (pos *moon*) (mass *moon*) (pos *earth*) (mass *earth*))))))
+	    (v-scale *dt* (gravitational-acceleration *moon* *earth*)))))
