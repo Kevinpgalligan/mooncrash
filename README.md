@@ -1,7 +1,7 @@
 ### Description
-A physics simulation to demonstrate why the Moon doesn't crash into Earth.
+A physics simulation to demonstrate why the Moon doesn't crash into Earth. There's a [sample video](https://kevingal.com/static/video/mooncrash/sample.mp4) on my website.
 
-![video demonstration, flinging the moon around like a mad yolk](https://github.com/Kevinpgalligan/mooncrash/blob/master/sample.mp4)
+![picture of moon and Earth](https://github.com/Kevinpgalligan/mooncrash/blob/master/pic.png)
 
 ### Setup
 You'll need to install a Common Lisp implementation and quicklisp. Clone this repo to your quicklisp `local-projects` folder. Then, from your REPL, after following the manual installation steps for [trivial-gamekit](https://github.com/borodust/trivial-gamekit) (the only dependency), run the following commands:
@@ -12,4 +12,4 @@ CL-USER> (in-package mooncrash)
 MOONCRASH> (gamekit:start 'spacesim)
 ```
 
-Aaaand with that, you should be off to the races! Let me know if any of that doesn't make sense or it doesn't work.
+Aaaand with that, you should be off to the races! You can launch a moon from anywhere on the screen by clicking and dragging your mouse. Let me know if any of that doesn't work.
